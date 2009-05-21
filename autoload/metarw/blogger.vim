@@ -1,5 +1,5 @@
 " metarw scheme: blogger
-" Version: 1.0
+" Version: 1.1
 " Copyright (C) 2009 ujihisa <http://ujihisa.blogspot.com/
 " License: MIT license  {{{
 "     Permission is hereby granted, free of charge, to any person obtaining
@@ -25,7 +25,7 @@
 " FIXME: metarw#blogger#complete NOT IMPLEMENTED!
 "   The following metarw#blogger#complete() is just the copy from metarw-git
 " script variables {{{2
-let s:scriptdir = expand('<sfile>:p:h')
+let s:blogger_rb_command = printf('ruby %s/blogger.rb', expand('<sfile>:p:h'))
 function! metarw#blogger#complete(arglead, cmdline, cursorpos)  "{{{2
   " a:arglead always contains "blogger:".
   let _ = s:parse_incomplete_fakepath(a:arglead)
@@ -69,18 +69,19 @@ endfunction
 function! metarw#blogger#read(fakepath)  "{{{2
   let _ = s:parse_incomplete_fakepath(a:fakepath)
   if _.method == 'show'
-    return ['read', printf('!ruby %s/blogger.rb show %s %s', s:scriptdir, _.blogid, _.uri)]
+    return ['read', printf('!%s show %s %s', s:blogger_rb_command, g:blogger_blogid, _.uri)]
   elseif _.method == 'list'
     let s:browse = []
-    for entry in split(system(printf('ruby %s/blogger.rb list %s', s:scriptdir, _.blogid)), "\n")
+    for entry in split(system(printf('%s list %s', s:blogger_rb_command, g:blogger_blogid)), "\n")
       let uri = split(entry, " -- ")[-1]
       let s:browse = add(s:browse, {
       \  'label': entry,
-      \  'fakepath': 'blogger:' . _.blogid . ':' . uri})
+      \  'fakepath': 'blogger:' . uri})
     endfor
     return ['browse', s:browse]
   else
-    " TODO: error
+    " TODO: Detail information on error
+    return ['error', '???']
   endif
 endfunction
 
@@ -90,11 +91,12 @@ endfunction
 function! metarw#blogger#write(fakepath, line1, line2, append_p)  "{{{2
   let _ = s:parse_incomplete_fakepath(a:fakepath)
   if _.method == 'show'
-    return ['write', printf('!ruby %s/blogger.rb update %s %s %s %s', s:scriptdir, _.blogid, _.uri, g:blogger_email, g:blogger_pass)]
+    return ['write', printf('!%s update %s %s %s %s', s:blogger_rb_command, g:blogger_blogid, _.uri, g:blogger_email, g:blogger_pass)]
   elseif _.method == 'create'
-    return ['write', printf('!ruby %s/blogger.rb create %s %s %s', s:scriptdir, _.blogid, g:blogger_email, g:blogger_pass)]
+    return ['write', printf('!%s create %s %s %s', s:blogger_rb_command, g:blogger_blogid, g:blogger_email, g:blogger_pass)]
   else
-    " TODO: error
+    " TODO: Detail information on error
+    return ['error', '???']
   endif
 endfunction
 
@@ -109,8 +111,7 @@ function! s:parse_incomplete_fakepath(incomplete_fakepath)  "{{{2
   "
   " scheme              {scheme} part in a:incomplete_fakepath (always 'blogger')
   "
-  " blogid              'blogger:{blogid}:...'
-  " entry_id            'blogger:...:{uri}' or nil
+  " uri                 'blogger:...:{uri}' or nil
   " method              'create', 'list' or 'show'
   let _ = {}
 
@@ -123,19 +124,16 @@ function! s:parse_incomplete_fakepath(incomplete_fakepath)  "{{{2
   let _.given_fakepath = a:incomplete_fakepath
   let _.scheme = fragments[0]
 
-  " {blogid}
-  let _.blogid = fragments[1]
-
-  if len(fragments) <= 2
+  if len(fragments) < 2
     " error
-  elseif fragments[2] == 'create'
+  elseif fragments[1] == 'create'
     let _.method = 'create'
-  elseif fragments[2] == 'list'
+  elseif fragments[1] == 'list'
     let _.method = 'list'
   else
     let _.method = 'show'
     " {uri}
-    let _.uri = join(fragments[2:-1], ":")
+    let _.uri = join(fragments[1:-1], ":")
   endif
 
   return _
