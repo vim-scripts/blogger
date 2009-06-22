@@ -106,7 +106,7 @@ module Blogger
     lines = text.lines.to_a
     title = lines.shift.strip
     body = Markdown.new(lines.join).to_html
-    body = body.gsub('&amp;', '&').gsub('&', '&amp;') # For inline HTML Syntax
+    # body = body.gsub('&amp;', '&').gsub('&', '&amp;') # For inline HTML Syntax
     <<-EOF.gsub(/^\s*\|/, '')
     |<entry xmlns='http://www.w3.org/2005/Atom'>
     |  <title type='text'>#{title}</title>
@@ -122,23 +122,11 @@ module Blogger
   # html2text :: String -> String
   def self.html2text(html)
     memo = []
-    IO.popen("#{File.dirname(__FILE__)}/html2text", 'r+') {|io|
+    IO.popen('html2markdown', 'r+') {|io|
       io.puts html
       io.close_write
-
-      mode = :normal
-      while line = io.gets do
-        if /^    / =~ line
-          mode = :code
-        elsif line.chomp == '' && mode == :code
-          line = io.gets
-        else
-          mode = :normal
-        end
-        memo << line
-      end
+      io.read
     }
-    memo.join
   end
 end
 
@@ -149,7 +137,11 @@ if __FILE__ == $0
   when 'show'
     puts Blogger.show(ARGV[0], ARGV[1])
   when 'create'
-    puts Blogger.create(ARGV[0], Blogger.login(ARGV[1], ARGV[2]), STDIN.read)
+    uri = Blogger.create(ARGV[0], Blogger.login(ARGV[1], ARGV[2]), STDIN.read)
+    if /darwin/ =~ RUBY_PLATFORM
+      system "echo '#{uri}' | pbcopy >&/dev/null" rescue nil
+    end
+    puts uri
   when 'update'
     puts Blogger.update(ARGV[0], ARGV[1], Blogger.login(ARGV[2], ARGV[3]), STDIN.read)
   else
