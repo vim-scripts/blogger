@@ -34,11 +34,11 @@ end
 
 module Blogger
   class RateLimitException < Exception; end
+  class EmptyEntry < Exception; end
 
-  # list :: String -> IO [Hash]
-  def self.list(blogid)
-    xml = Net::HTTP.get(URI.parse("http://www.blogger.com/feeds/#{blogid}/posts/default"))
-    Nokogiri::XML(xml).xpath('//xmlns:entry[xmlns:link/@rel="alternate"]').
+  # list :: String -> Int -> IO [Hash]
+  def self.list(blogid, page)
+    __pagenate_get__(blogid, page).xpath('//xmlns:entry[xmlns:link/@rel="alternate"]').
       map {|i|
         [:published, :updated, :title, :content].
           maph {|s| [s, i.at(s.to_s).content] }.
@@ -48,8 +48,13 @@ module Blogger
 
   # show :: String -> String -> IO [String]
   def self.show(blogid, uri)
-    entry = list(blogid).find {|e| e[:uri] == uri }
-    entry[:title] + "\n\n" + html2text(entry[:content])
+    xml = __find_xml_recursively__(blogid) {|x|
+      x.at("//xmlns:entry[xmlns:link/@href='#{uri}']/xmlns:link[@rel='edit']")
+    }
+    title = xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']/xmlns:title").content
+    body = xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']/xmlns:content").content
+    body = body.gsub(%r|<div class="blogger-post-footer">.*?</div>|, '')
+    title + "\n\n" + html2text(body)
   end
 
   # login :: String -> String -> String
@@ -86,9 +91,11 @@ module Blogger
     title = lines.shift.strip
     body = Markdown.new(lines.join).to_html
 
-    xml = Net::HTTP.get(URI.parse("http://www.blogger.com/feeds/#{blogid}/posts/default")) # not dry!
-    xml = Nokogiri::XML(xml)
+    xml = __find_xml_recursively__(blogid) {|x|
+      x.at("//xmlns:entry[xmlns:link/@href='#{uri}']/xmlns:link[@rel='edit']")
+    }
     put_uri = xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']/xmlns:link[@rel='edit']")['href']
+
     xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']/xmlns:title").content = title
     xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']/xmlns:content").content = body
     xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']")['xmlns'] = 'http://www.w3.org/2005/Atom'
@@ -99,6 +106,23 @@ module Blogger
         "Authorization" => "GoogleLogin auth=#{token}",
         'Content-Type' => 'application/atom+xml'
       })
+  end
+
+  def self.__find_xml_recursively__(blogid)
+    xml = nil
+    (0..1/0.0).each do |n|
+      xml = __pagenate_get__(blogid, n)
+      break if yield(xml)
+    end
+    xml
+  end
+
+  def self.__pagenate_get__(blogid, page)
+    xml = Net::HTTP.get(URI.parse(
+      "http://www.blogger.com/feeds/#{blogid}/posts/default?max-results=30&start-index=#{30*page+1}"))
+    xml = Nokogiri::XML(xml)
+    raise EmptyEntry if xml.xpath('//xmlns:entry').empty?
+    xml
   end
 
   # text2xml :: String -> String
@@ -133,7 +157,7 @@ end
 if __FILE__ == $0
   case ARGV.shift
   when 'list'
-    puts Blogger.list(ARGV[0]).map {|e| "#{e[:title]} -- #{e[:uri]}" }
+    puts Blogger.list(ARGV[0], 0).map {|e| "#{e[:title]} -- #{e[:uri]}" }
   when 'show'
     puts Blogger.show(ARGV[0], ARGV[1])
   when 'create'
