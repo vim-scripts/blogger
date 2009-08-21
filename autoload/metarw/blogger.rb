@@ -4,26 +4,7 @@ require 'uri'
 require 'rubygems'
 require 'nokogiri'
 require 'markdown'
-
-class Net::HTTP
-  def self.post(uri, data, header)
-    __post_or_put__(:post, uri, data, header)
-  end
-
-  def self.put(uri, data, header)
-    __post_or_put__(:put, uri, data, header)
-  end
-
-  def self.__post_or_put__(method, uri, data, header)
-    uri = URI.parse(uri)
-    i = new(uri.host, uri.port)
-    unless uri.port == 80
-      i.use_ssl = true
-      i.verify_mode = OpenSSL::SSL::VERIFY_NONE
-    end
-    i.__send__(method, uri.path, data, header)
-  end
-end
+require 'net-https-wrapper'
 
 class Array
   # maph :: [a] -> (a -> b) -> Hash
@@ -88,7 +69,7 @@ module Blogger
   # update :: String -> String -> String -> String -> IO ()
   def self.update(blogid, uri, token, str)
     lines = str.lines.to_a
-    title = lines.shift.strip
+    title = __firstline2title__(lines.shift.strip)
     body = Markdown.new(lines.join).to_html
 
     xml = __find_xml_recursively__(blogid) {|x|
@@ -125,10 +106,15 @@ module Blogger
     xml
   end
 
+  # __firstline2title__ :: String -> String
+  def self.__firstline2title__(firstline)
+    firstline.gsub(/^#*\s*/, '')
+  end
+
   # text2xml :: String -> String
   def self.text2xml(text)
     lines = text.lines.to_a
-    title = lines.shift.strip
+    title = __firstline2title__(lines.shift.strip)
     body = Markdown.new(lines.join).to_html
     # body = body.gsub('&amp;', '&').gsub('&', '&amp;') # For inline HTML Syntax
     <<-EOF.gsub(/^\s*\|/, '')
