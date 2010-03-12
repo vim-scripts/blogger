@@ -127,10 +127,13 @@ module Blogger
   def self.list(blogid, page)
     __pagenate_get__(blogid, page).xpath('//xmlns:entry[xmlns:link/@rel="alternate"]').
       map {|i|
-      [:published, :updated, :title, :content].
-        maph {|s| [s, i.at(s.to_s).content] }.
-        update(:uri => i.at('link[@rel="alternate"]')['href'])
-    }
+        tmp = [:published, :updated, :title].
+          maph {|s| [s, i.at(s.to_s).content] }.
+          update(
+            :content =>
+            i.at('content') ? i.at('content').content : i.at('summary').content).
+          update(:uri => i.at('link[@rel="alternate"]')['href'])
+      }
   end
 
   # show :: String -> String -> IO [String]
@@ -207,9 +210,9 @@ module Blogger
   def self.__pagenate_get__(blogid, page)
     xml = Net::HTTP.get(URI.parse(
       "http://www.blogger.com/feeds/#{blogid}/posts/default?max-results=30&start-index=#{30*page+1}"))
-      xml = Nokogiri::XML(xml)
-      raise EmptyEntry if xml.xpath('//xmlns:entry').empty?
-      xml
+    xml = Nokogiri::XML(xml)
+    raise EmptyEntry if xml.xpath('//xmlns:entry').empty?
+    xml
   end
 
   # __firstline2title__ :: String -> String
