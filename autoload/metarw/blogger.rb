@@ -19,7 +19,8 @@ class Gist
   class GistFileOneNotFound < Exception;end
   class GistNotFound < Exception; end
   class GitIsNotConfigured < Exception; end
-  def self.create(o={})
+
+  def self.create(o = {})
     opt = {:text => '', :description => nil, :ext => 'txt'}.merge(o)
     a = self.new
     a.instance_variable_set("@text", opt[:text])
@@ -117,6 +118,7 @@ end
 
 module Blogger
   class RateLimitException < Exception; end
+  class UnknownError < Exception; end
   class EmptyEntry < Exception; end
 
   @@gist = false
@@ -172,7 +174,9 @@ module Blogger
         'Content-Type' => 'application/atom+xml'
       })
       raise RateLimitException if xml.body == "Blog has exceeded rate limit or otherwise requires word verification for new posts"
-      Nokogiri::XML(xml.body).at('//xmlns:link[@rel="alternate"]')['href']
+      x = Nokogiri::XML(xml.body)
+      raise UnknownError, xml.body unless /published/ =~ x.to_s
+      x.at('//xmlns:link[@rel="alternate"]')['href']
   end
 
   # update :: String -> String -> String -> String -> IO ()
@@ -191,7 +195,8 @@ module Blogger
     xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']")['xmlns'] = 'http://www.w3.org/2005/Atom'
     Nokogiri::XML(Net::HTTP.put(
       put_uri,
-      xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']").to_s,
+      # The line below is very hacky and intentional. It removes xmlns/thr
+      Nokogiri::XML(xml.at("//xmlns:entry[xmlns:link/@href='#{uri}']").to_s).to_s,
       {
         "Authorization" => "GoogleLogin auth=#{token}",
         'Content-Type' => 'application/atom+xml'
@@ -230,10 +235,16 @@ module Blogger
     lines = text.lines.to_a
     title = __firstline2title__(lines.shift.strip)
     body = self.text2html(lines.join)
-    # body = body.gsub('&amp;', '&').gsub('&', '&amp;') # For inline HTML Syntax
+
+    body.gsub!('&quot;', '"')
+    title.gsub!('&quot;', '"')
+
+    body.gsub!(/(\\?)&/) {|s| $1.empty? ? '&amp;' : '&' }
+    title.gsub!(/(\\?)&/) {|s| $1.empty? ? '&amp;' : '&' }
+
     <<-EOF.gsub(/^\s*\|/, '')
     |<entry xmlns='http://www.w3.org/2005/Atom'>
-    |  <title type='text'>#{title}</title>
+    |  <title type='text'>#{title.gsub(/&/, '&amp;')}</title>
     |  <content type='xhtml'>
     |    <div xmlns="http://www.w3.org/1999/xhtml">
     |      #{body}
@@ -259,7 +270,7 @@ module Blogger
         if g.updatable?
           c  = '<gist options="'+$1+' '+$2+'" />'
           c << "\n"
-          c << g.text.split(/\r?\n/).map{|x| '    '+x }.join("\n")
+          c << g.text.split(/\r?\n/).map {|x| '    ' + x }.join("\n")
           c << "\n"
         else; s
         end
